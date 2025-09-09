@@ -1,0 +1,131 @@
+{
+  "name": "ailens",
+  "displayName": "AI Lens",
+  "description": "Monitor and analyze AI-generated code in your VS Code workspace",
+  "version": "1.0.4",
+  "publisher": "kaiye",
+  "engines": {
+    "vscode": "^1.74.0",
+    "node": ">=16.0.0"
+  },
+  "categories": [
+    "Other",
+    "Data Science",
+    "Visualization"
+  ],
+  "keywords": [
+    "ai",
+    "cursor",
+    "code-analysis",
+    "statistics",
+    "monitoring"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ailens.openDashboard",
+        "title": "Open AI Dashboard",
+        "category": "AI Lens"
+      },
+      {
+        "command": "ailens.startMonitoring",
+        "title": "Start AI Code Monitoring",
+        "category": "AI Lens"
+      },
+      {
+        "command": "ailens.stopMonitoring",
+        "title": "Stop AI Code Monitoring",
+        "category": "AI Lens"
+      },
+      {
+        "command": "ailens.showStats",
+        "title": "Show AI Code Statistics",
+        "category": "AI Lens"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "ailens.openDashboard",
+          "when": "true"
+        },
+        {
+          "command": "ailens.startMonitoring",
+          "when": "true"
+        },
+        {
+          "command": "ailens.stopMonitoring",
+          "when": "true"
+        },
+        {
+          "command": "ailens.showStats",
+          "when": "true"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "AI Lens",
+      "properties": {
+        "ailens.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start AI code monitoring when VS Code opens"
+        },
+        "ailens.updateInterval": {
+          "type": "number",
+          "default": 1000,
+          "description": "Update interval for monitoring in milliseconds"
+        },
+        "ailens.showNotifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show notifications when AI-generated code is detected"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "node build.mjs",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package",
+    "watcher": "node cursor-ai-watcher.js"
+  },
+  "dependencies": {
+    "sqlite3": "^5.1.6"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.0.0",
+    "@types/node": "16.x",
+    "@types/vscode": "^1.74.0",
+    "@typescript-eslint/eslint-plugin": "^5.45.0",
+    "@typescript-eslint/parser": "^5.45.0",
+    "@vscode/test-electron": "^2.2.0",
+    "esbuild": "^0.25.9",
+    "eslint": "^8.28.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "typescript": "^4.9.4",
+    "vsce": "^2.15.0"
+  },
+  "author": "kaiye",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kaiye/ailens"
+  },
+  "bugs": {
+    "url": "https://github.com/kaiye/ailens/issues"
+  },
+  "homepage": "https://github.com/kaiye/ailens#readme",
+  "icon": "assets/icon.png",
+  "galleryBanner": {
+    "color": "#0B3D91",
+    "theme": "dark"
+  }
+}

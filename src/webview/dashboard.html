@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+    <title>AI Lens Dashboard</title>
+    <style>
+        :root {
+            /* Use VS Code theme variables with fallbacks */
+            --bg-primary: var(--vscode-editor-background, #1e1e1e);
+            --bg-secondary: var(--vscode-sideBar-background, #252526);
+            --bg-tertiary: var(--vscode-titleBar-activeBackground, #2d2d30);
+            --border-primary: var(--vscode-panel-border, #3e3e42);
+            --border-secondary: var(--vscode-widget-border, #404045);
+            --text-primary: var(--vscode-foreground, #cccccc);
+            --text-secondary: var(--vscode-descriptionForeground, #969696);
+            --text-muted: var(--vscode-disabledForeground, #6c6c6c);
+            --accent-blue: var(--vscode-button-background, #007acc);
+            --accent-green: var(--vscode-gitDecoration-addedResourceForeground, #00bc88);
+            --accent-orange: var(--vscode-gitDecoration-modifiedResourceForeground, #ff9500);
+            --accent-red: var(--vscode-gitDecoration-deletedResourceForeground, #f14c4c);
+            --hover-bg: var(--vscode-list-hoverBackground, #2a2d2e);
+            --progress-bg: var(--vscode-progressBar-background, #3c3c3c);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            font-size: 13px;
+            line-height: 1.4;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            padding: 16px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-primary);
+        }
+
+        .title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .title-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+        }
+
+        .actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 0;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .btn-primary {
+            background-color: var(--accent-blue);
+            color: var(--vscode-button-foreground, white);
+        }
+
+        .btn-secondary {
+            background-color: var(--accent-green);
+            color: var(--vscode-button-secondaryForeground, white);
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        .workspace-info {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: 0;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .workspace-info h3 {
+            color: var(--text-primary);
+            margin-bottom: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .workspace-info p {
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+            font-size: 12px;
+        }
+
+        .workspace-info strong {
+            color: var(--text-primary);
+            margin-right: 4px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .stats-grid-first-row {
+            margin-bottom: 16px;
+        }
+
+        .stats-grid-second-row {
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: 0;
+            padding: 16px;
+            position: relative;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background-color: var(--accent-orange);
+        }
+
+        .stat-card h3 {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .progress-container {
+            margin-top: 8px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background-color: transparent;
+            border: 1px solid var(--vscode-input-border, var(--border-secondary));
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background-color: var(--vscode-progressBar-background, var(--accent-blue));
+            border-radius: 0;
+            transition: width 0.3s ease;
+            min-width: 0;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+
+        .status-connected {
+            background-color: var(--accent-green);
+        }
+
+        .status-disconnected {
+            background-color: var(--accent-red);
+        }
+
+        .files-section {
+            margin-top: 24px;
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .summary-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 16px;
+            padding: 12px;
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: 0;
+        }
+
+        .summary-item {
+            font-size: 12px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .summary-item strong {
+            color: var(--text-primary);
+        }
+
+        .files-table-container {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: 0;
+            overflow: hidden;
+        }
+
+        .files-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .files-table th {
+            background-color: var(--bg-tertiary);
+            color: var(--text-primary);
+            font-weight: 600;
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border-primary);
+            position: relative;
+            user-select: none;
+        }
+
+        .files-table th.sortable {
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .files-table th.sortable:hover {
+            background-color: var(--hover-bg);
+        }
+
+        .files-table th.sortable::after {
+            content: '';
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+
+        .files-table th.sort-asc::after {
+            content: '▲';
+            color: var(--accent-blue);
+        }
+
+        .files-table th.sort-desc::after {
+            content: '▼';
+            color: var(--accent-blue);
+        }
+
+        .files-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-secondary);
+            color: var(--text-secondary);
+        }
+
+        .file-row {
+            transition: background-color 0.2s ease;
+            cursor: pointer;
+        }
+
+        .file-row:hover {
+            background-color: var(--hover-bg);
+        }
+
+        .file-name {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        .number-cell {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .percentage-cell {
+            text-align: right;
+            font-weight: 600;
+            color: var(--accent-blue);
+        }
+
+        .tab-cell {
+            color: var(--accent-orange);
+        }
+
+        .composer-cell {
+            color: var(--accent-green);
+        }
+
+        .date-cell {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .error {
+            background-color: #2d1b1b;
+            color: var(--accent-red);
+            padding: 12px;
+            border: 1px solid var(--accent-red);
+            border-radius: 0;
+            margin-bottom: 16px;
+            display: none;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .loading-spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border-primary);
+            border-top: 2px solid var(--accent-blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .last-update {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-align: center;
+            margin-top: 16px;
+        }
+
+        #git-info a {
+            color: var(--accent-blue);
+            text-decoration: none;
+        }
+
+        #git-info a:hover {
+            text-decoration: underline;
+        }
+
+        /* Git Commits Analysis Styles */
+        .git-commits-section {
+            margin-bottom: 24px;
+        }
+
+        .current-branch {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            padding: 4px 8px;
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+        }
+
+        .git-commits-table-container {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: 0;
+            overflow: hidden;
+        }
+
+        .git-commits-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .git-commits-table th {
+            background-color: var(--bg-tertiary);
+            color: var(--text-primary);
+            font-weight: 600;
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border-primary);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .git-commits-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-secondary);
+            color: var(--text-secondary);
+            vertical-align: top;
+        }
+
+        .commit-row {
+            transition: background-color 0.2s ease;
+        }
+
+        .commit-row:hover {
+            background-color: var(--hover-bg);
+        }
+
+        .commit-hash {
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 10px;
+            color: var(--accent-blue);
+            background-color: var(--bg-tertiary);
+            padding: 2px 4px;
+            border-radius: 0;
+            white-space: nowrap;
+        }
+
+        .commit-message {
+            color: var(--text-primary);
+            font-weight: 500;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .commit-author {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .commit-files-count {
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .commit-changes {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .change-badge {
+            font-size: 10px;
+            padding: 2px 4px;
+            border-radius: 0;
+            font-weight: 600;
+            min-width: 20px;
+            text-align: center;
+        }
+
+        .change-badge.additions {
+            background-color: var(--accent-green);
+            color: white;
+        }
+
+        .change-badge.deletions {
+            background-color: var(--accent-red);
+            color: white;
+        }
+
+        .change-badge.ai-additions {
+            background-color: var(--accent-orange);
+            color: white;
+        }
+
+        .change-badge.ai-deletions {
+            background-color: #ff6b35;
+            color: white;
+        }
+
+        .ai-percentage {
+            text-align: center;
+            font-weight: 600;
+            color: var(--accent-orange);
+        }
+
+        .ai-percentage.high {
+            color: var(--accent-green);
+        }
+
+        .ai-percentage.medium {
+            color: var(--accent-orange);
+        }
+
+        .ai-percentage.low {
+            color: var(--text-muted);
+        }
+
+        .commit-date {
+            font-size: 11px;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+
+        .no-commits {
+            text-align: center;
+            color: var(--text-secondary);
+            padding: 40px 20px;
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title">
+            <img src="{{ICON_DATA_URL}}" alt="AI Lens" class="title-icon" />
+            AI Lens Dashboard
+        </div>
+        <div class="actions">
+            <button class="btn btn-primary" onclick="refreshData()">
+                🔄 REFRESH
+            </button>
+            <button class="btn btn-secondary" onclick="exportData()">
+                📊 EXPORT
+            </button>
+        </div>
+    </div>
+
+    <div id="error" class="error"></div>
+
+    <div class="loading" id="loading">
+        <div class="loading-spinner"></div>
+        <div>Loading AI code analysis...</div>
+    </div>
+
+    <div id="workspace-info" class="workspace-info" style="display: none;">
+        <h3>📁 WORKSPACE INFORMATION</h3>
+        <p><strong>Name:</strong> <span id="workspace-name">-</span></p>
+        <p><strong>Path:</strong> <span id="workspace-path">-</span></p>
+        <p id="git-info" style="display: none;"><strong>Git:</strong> <span id="git-repository">-</span></p>
+    </div>
+
+    <!-- First row: AI metrics -->
+    <div class="stats-grid stats-grid-first-row">
+        <div class="stat-card">
+            <h3>AI Generated</h3>
+            <div class="stat-value" id="aiLines">0</div>
+            <div class="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="aiProgress" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="stat-card">
+            <h3>Tab Completions</h3>
+            <div class="stat-value" id="tabLines">0</div>
+        </div>
+        
+        <div class="stat-card">
+            <h3>Chat Composer</h3>
+            <div class="stat-value" id="composerLines">0</div>
+        </div>
+    </div>
+
+    <!-- Second row: Usage metrics -->
+    <div class="stats-grid stats-grid-second-row">
+        <div class="stat-card">
+            <h3>Total Code Lines</h3>
+            <div class="stat-value" id="totalLines">0</div>
+        </div>
+        
+        <div class="stat-card">
+            <h3>AI In Used</h3>
+            <div class="stat-value" id="aiInUsed">0</div>
+        </div>
+        
+        <div class="stat-card">
+            <h3>AI Percentage In Used</h3>
+            <div class="stat-value" id="aiPercentageInUsed">0.00%</div>
+            <div class="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="aiInUsedProgress" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="git-commits-section">
+        <div class="section-title">📈 Recent Commits Analysis</div>
+        
+        <div id="currentBranch" class="current-branch" style="display: none;">
+            🌿 Current branch: <strong id="branchName">-</strong>
+        </div>
+        
+        <div id="gitCommitsContainer">
+            <div id="gitCommitsLoading" style="display: none;">
+                <div style="text-align: center; padding: 20px;">
+                    <div class="loading-spinner"></div>
+                    <div>Analyzing recent commits...</div>
+                </div>
+            </div>
+            
+            <div id="gitCommitsTableContainer" class="git-commits-table-container">
+                <table class="git-commits-table">
+                    <thead>
+                        <tr>
+                            <th>COMMIT</th>
+                            <th>MESSAGE</th>
+                            <th>AUTHOR</th>
+                            <th>FILES</th>
+                            <th>TOTAL +/-</th>
+                            <th>AI +/-</th>
+                            <th>AI %</th>
+                            <th>DATE</th>
+                        </tr>
+                    </thead>
+                    <tbody id="gitCommitsTable">
+                    </tbody>
+                </table>
+            </div>
+            
+            <div id="noCommits" class="no-commits" style="display: none;">
+                <div>📝 No recent commits found</div>
+                <small>Make some commits to see AI contribution analysis</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="files-section">
+        <div class="section-title">📁 Files Analysis</div>
+        
+        <div id="filesSummary" style="display: none;"></div>
+        
+        <div class="files-table-container">
+            <table class="files-table">
+                <thead>
+                    <tr>
+                        <th class="sortable" onclick="sortTable('fileName')">FILE NAME</th>
+                        <th class="sortable" onclick="sortTable('totalLines')">TOTAL LINES</th>
+                        <th class="sortable" onclick="sortTable('aiLines')">AI LINES</th>
+                        <th class="sortable" onclick="sortTable('tabLines')">TAB</th>
+                        <th class="sortable" onclick="sortTable('composerLines')">CHAT</th>
+                        <th class="sortable" onclick="sortTable('percentage')">AI %</th>
+                        <th class="sortable" onclick="sortTable('lastModified')">LAST MODIFIED</th>
+                    </tr>
+                </thead>
+                <tbody id="filesTable">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="last-update" id="lastUpdate">Last update: Never</div>
+
+    <script src="dashboard.js"></script>
+</body>
+</html>

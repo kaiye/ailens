@@ -1,0 +1,7 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+
+** important **：这个项目中凡事需要监听 ai item 和 document change 事件的变化，均需要用户在其他的 cursor 窗口操作进行配合，否则你将会监测不到任何变化。当你需要监听变化的时候，请通知用户协助测试，若测试任务超时，可直接跳过。
