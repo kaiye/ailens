@@ -30,9 +30,13 @@ jobs:
       - name: Package VSIX
         run: npx vsce package
 
-      - name: Generate changelog for this release
+      - name: Install changelog tool (CLI + conventionalcommits preset)
         run: |
-          npx conventional-changelog -p angular -r 1 -o CHANGELOG_RELEASE.md
+          npm i -D conventional-changelog-cli conventional-changelog-conventionalcommits
+
+      - name: Generate changelog for this release (conventionalcommits)
+        run: |
+          npx conventional-changelog -p conventionalcommits -r 1 -o CHANGELOG_RELEASE.md
           echo "Generated release changelog:" && head -n 50 CHANGELOG_RELEASE.md || true
 
       - name: Upload artifact (VSIX)
