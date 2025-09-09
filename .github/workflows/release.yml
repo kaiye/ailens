@@ -56,5 +56,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish to Open VSX (optional)
-        if: ${{ secrets.OVSX_TOKEN != '' }}
-        run: npx ovsx publish -p "${{ secrets.OVSX_TOKEN }}"
+        if: ${{ env.OVSX_TOKEN != '' }}
+        env:
+          OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
+        run: npx ovsx publish -p "$OVSX_TOKEN"
