@@ -53,6 +53,15 @@ function copyWebview() {
     mkdirSync(join(webviewOut, 'assets'), { recursive: true });
     cpSync(iconSrc, iconOut);
   }
+  // copy sql.js wasm for runtime usage
+  try {
+    const wasmSrc = join(root, 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm');
+    const wasmOutDir = join(outDir, 'sql');
+    if (existsSync(wasmSrc)) {
+      mkdirSync(wasmOutDir, { recursive: true });
+      cpSync(wasmSrc, join(wasmOutDir, 'sql-wasm.wasm'));
+    }
+  } catch {}
 }
 
 (async () => {
@@ -62,4 +71,3 @@ function copyWebview() {
   }
   copyWebview();
 })();
-

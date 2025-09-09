@@ -17,6 +17,9 @@ jest.config.js
 *.log
 .DS_Store
 
+# Exclude all dependencies at runtime (we ship bundled JS + wasm only)
+node_modules/**
+
 # Artifacts and packages
 ailens-*.vsix
 coverage/**
@@ -27,33 +30,6 @@ build.mjs
 
 # Keep: out/**, node_modules/**, assets/icon.png, README.md, LICENSE
 !assets/screenshots/**
+!out/sql/**
 
-# --- Aggressive node_modules slimming ---
-# Drop common non-runtime folders
-node_modules/**/test/**
-node_modules/**/tests/**
-node_modules/**/__tests__/**
-node_modules/**/example/**
-node_modules/**/examples/**
-node_modules/**/benchmark/**
-node_modules/**/benchmarks/**
-node_modules/**/perf/**
-node_modules/**/docs/**
-node_modules/**/doc/**
-node_modules/**/man/**
-node_modules/**/.github/**
-node_modules/**/.vscode/**
-
-# Drop common non-runtime file types
-node_modules/**/*.md
-node_modules/**/*.markdown
-node_modules/**/*.map
-node_modules/**/*.ts
-node_modules/**/*.coffee
-node_modules/**/*.scss
-node_modules/**/*.sass
-node_modules/**/*.less
-
-# SQLite3 binary bindings MUST be kept. Re-include sqlite3 just in case.
-!node_modules/sqlite3/**
-!node_modules/chokidar/**
+# (previous per-file slimming rules are no longer needed)

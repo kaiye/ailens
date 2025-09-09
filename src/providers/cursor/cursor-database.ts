@@ -1,7 +1,6 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as sqlite3 from 'sqlite3';
 import { AICodeItem } from '../../core/types';
 import { SmartEventDebouncer } from '../../utils/debounce';
 
@@ -80,54 +79,42 @@ export class CursorDatabase {
   }
 
   /**
-   * 从数据库加载AI追踪项
+   * 从数据库加载AI追踪项（使用 sql.js WASM，跨架构）
    */
   async loadAITrackingItems(): Promise<AICodeItem[] | null> {
     if (!this.isAvailable()) {
       throw new Error(`Cursor database not found or not accessible: ${this.dbPath}`);
     }
 
-    return new Promise((resolve, reject) => {
-      const db = new sqlite3.Database(this.dbPath, sqlite3.OPEN_READONLY, (err) => {
-        if (err) {
-          reject(new Error(`Failed to open database: ${err.message}`));
-          return;
-        }
-      });
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      const initSqlJs = (await import('sql.js')).default;
 
-      const query = `
-                SELECT key, value 
-                FROM ItemTable 
-                WHERE key = 'aiCodeTrackingLines'
-            `;
+      // wasm 路径：由 build.mjs 复制至 out/sql/sql-wasm.wasm
+      // __dirname 指向打包后的 out 目录，因此取 out/sql/
+      const wasmPath = path.join(__dirname, 'sql', 'sql-wasm.wasm');
+      const SQL = await initSqlJs({ locateFile: () => wasmPath });
 
-      db.get(query, [], (err, row: any) => {
-        if (err) {
-          db.close();
-          reject(new Error(`Database query failed: ${err.message}`));
-          return;
-        }
+      const fileBuffer = fs.readFileSync(this.dbPath);
+      const db = new SQL.Database(fileBuffer);
+      const query = "SELECT value FROM ItemTable WHERE key='aiCodeTrackingLines'";
+      const res = db.exec(query);
 
-        let data: AICodeItem[] | null = null;
-        if (row) {
-          try {
-            data = JSON.parse(row.value) as AICodeItem[];
-          } catch (parseErr) {
-            db.close();
-            reject(new Error(`Failed to parse aiCodeTrackingLines: ${parseErr}`));
-            return;
-          }
-        }
+      if (!res || res.length === 0 || !res[0].values || res[0].values.length === 0) {
+        return null;
+      }
 
-        db.close((closeErr) => {
-          if (closeErr) {
-            console.warn(`Warning: Failed to close database: ${closeErr.message}`);
-          }
-        });
-
-        resolve(data);
-      });
-    });
+      const value = res[0].values[0][0] as string;
+      try {
+        const data = JSON.parse(value) as AICodeItem[];
+        return data;
+      } catch (e) {
+        throw new Error(`Failed to parse aiCodeTrackingLines: ${e}`);
+      }
+    } catch (err: any) {
+      throw new Error(`Failed to read Cursor DB with sql.js: ${err?.message || err}`);
+    }
   }
 
   /**
