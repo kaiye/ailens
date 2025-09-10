@@ -2,7 +2,7 @@
   "name": "ailens",
   "displayName": "AI Lens",
   "description": "Monitor and analyze AI-generated code in your VS Code workspace",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "publisher": "kaiye",
   "engines": {
     "vscode": "^1.74.0",
