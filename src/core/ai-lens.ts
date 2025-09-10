@@ -9,6 +9,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { WorkspaceUtils } from '../utils/workspace-utils';
 import { StatsAggregator } from './stats-aggregator';
+import { Logger } from '../utils/logger';
 
 /**
  * AI Code Analyzer - 核心分析引擎
@@ -18,6 +19,7 @@ export class AICodeAnalyzer {
   private lastKnownItems: AICodeItem[] = [];
   private lastItemHash: string | null = null;
   private matchedHashes = new Set<string>();
+  private readonly MAX_MATCHED_HASHES = 50000; // ~3MB, reasonable for long sessions
   private stopDatabaseWatcher?: () => void;
   private timingAnalyzer?: TimingAnalyzer;
   private codeOperationAnalyzer: CodeOperationAnalyzer;
@@ -26,6 +28,9 @@ export class AICodeAnalyzer {
 
   // 未匹配项队列（用于document change推断）
   private unmatchedAIItems: AICodeItem[] = [];
+  private readonly MAX_UNMATCHED_ITEMS = 10000; // ~5MB, keep more for better matching
+  private readonly HASH_CLEANUP_INTERVAL = 1800000; // 30 minutes - allow for longer coding sessions
+  private lastHashCleanup = Date.now();
 
   // 新的Hash推断引擎（从 DocumentMonitor 获取）
   private hashInferenceEngine?: LineBasedHashInference;
@@ -127,7 +132,7 @@ export class AICodeAnalyzer {
       this.stopDatabaseWatcher = this.database.watchForChanges(() => {
         this.checkForNewItems();
       });
-      console.log('AI Lens: Started database monitoring');
+      Logger.info('AI Lens: Started database monitoring');
     } catch (error) {
       console.error('AI Lens: Failed to start database monitoring:', error);
       throw error;
@@ -141,7 +146,7 @@ export class AICodeAnalyzer {
     if (this.stopDatabaseWatcher) {
       this.stopDatabaseWatcher();
       this.stopDatabaseWatcher = undefined;
-      console.log('AI Lens: Stopped database monitoring');
+      Logger.info('AI Lens: Stopped database monitoring');
     }
   }
 
@@ -175,8 +180,8 @@ export class AICodeAnalyzer {
         }
       }
 
-      // 更新已知状态
-      this.lastKnownItems = [...currentItems];
+      // 更新已知状态（保留足够历史以便准确匹配）
+      this.lastKnownItems = currentItems.length > 10000 ? currentItems.slice(-10000) : [...currentItems];
       if (currentItems.length > 0) {
         this.lastItemHash = currentItems[currentItems.length - 1].hash;
       }
@@ -192,11 +197,11 @@ export class AICodeAnalyzer {
         }));
 
         // 输出原始 SQLite AI item 信息，现在包含时间戳
-        console.log(`\n=== NEW AI ITEMS FROM SQLITE (${itemsWithTimestamp.length}) ===`);
+        Logger.debug(`\n=== NEW AI ITEMS FROM SQLITE (${itemsWithTimestamp.length}) ===`);
         itemsWithTimestamp.forEach((item, index) => {
-          console.log(`Raw AI Item ${index + 1}:`, JSON.stringify(item, null, 2));
+          Logger.debug(`Raw AI Item ${index + 1}:`, JSON.stringify(item, null, 2));
         });
-        console.log(`=== END NEW AI ITEMS ===\n`);
+        Logger.debug(`=== END NEW AI ITEMS ===\n`);
 
 
         await this.processNewAIItems(itemsWithTimestamp);
@@ -236,7 +241,7 @@ export class AICodeAnalyzer {
           this.unmatchedAIItems = this.unmatchedAIItems.filter(item => item.hash !== result.hash);
         }
       } else {
-        console.log(`   ⚠️  Hash inference engine not available`);
+        Logger.warn(`   ⚠️  Hash inference engine not available`);
       }
     } catch (error) {
       console.error('   ❌ Error in processNewAIItems:', error);
@@ -252,6 +257,9 @@ export class AICodeAnalyzer {
     const isNewMatch = !this.matchedHashes.has(hash);
 
     this.matchedHashes.add(hash);
+    
+    // 检查是否需要清理以防止内存泄漏
+    this.cleanupHashesIfNeeded();
 
     // 如果是新匹配，报告发现
     if (isNewMatch && matchResult) {
@@ -265,21 +273,21 @@ export class AICodeAnalyzer {
   private reportMatch(hash: string, matchResult: any): void {
     const hashPreview = hash.substring(0, 8);
     const source = matchResult.source || 'unknown';
-    console.log(`      ✅ MATCH FOUND: ${hashPreview}... (${source})`);
+    Logger.debug(`      ✅ MATCH FOUND: ${hashPreview}... (${source})`);
 
     if (matchResult.content) {
       const preview = matchResult.content.length > 30 ? matchResult.content.substring(0, 30) + '...' : matchResult.content;
-      console.log(`         Content: "${preview}"`);
+      Logger.debug(`         Content: "${preview}"`);
     }
 
     if (matchResult.operation) {
-      console.log(`         Operation: ${matchResult.operation}`);
+      Logger.debug(`         Operation: ${matchResult.operation}`);
     }
 
     // 显示hash推断特有的信息
 
     if (matchResult.lineNumber !== undefined) {
-      console.log(`         Line Number: ${matchResult.lineNumber}`);
+      Logger.debug(`         Line Number: ${matchResult.lineNumber}`);
     }
   }
 
@@ -287,11 +295,41 @@ export class AICodeAnalyzer {
 
 
   /**
+   * 清理哈希集合以防止内存泄漏
+   */
+  private cleanupHashesIfNeeded(): void {
+    const now = Date.now();
+    
+    // 定期清理或达到大小限制时清理
+    if (now - this.lastHashCleanup > this.HASH_CLEANUP_INTERVAL || 
+        this.matchedHashes.size > this.MAX_MATCHED_HASHES) {
+      
+      // 保留最近的80%哈希，确保不过度清理
+      const hashArray = Array.from(this.matchedHashes);
+      const keepCount = Math.floor(this.MAX_MATCHED_HASHES * 0.8);
+      
+      this.matchedHashes.clear();
+      // 保留最新的哈希（假设新增的在后面）
+      hashArray.slice(-keepCount).forEach(hash => this.matchedHashes.add(hash));
+      
+      Logger.debug(`🧹 [CLEANUP] Cleaned matched hashes: ${hashArray.length} → ${this.matchedHashes.size}`);
+      this.lastHashCleanup = now;
+    }
+    
+    // 清理未匹配项队列
+    if (this.unmatchedAIItems.length > this.MAX_UNMATCHED_ITEMS) {
+      const removed = this.unmatchedAIItems.length - this.MAX_UNMATCHED_ITEMS;
+      this.unmatchedAIItems = this.unmatchedAIItems.slice(-this.MAX_UNMATCHED_ITEMS);
+      Logger.debug(`🧹 [CLEANUP] Cleaned unmatched items: removed ${removed}, kept ${this.unmatchedAIItems.length}`);
+    }
+  }
+
+  /**
    * 根据存储器数据更新统计
    */
   private updateStatsFromStorage(): void {
     this.statsAggregator.updateFromStorage(this.stats);
-    console.log(`📊 [STATS_UPDATE] AI lines: ${this.stats.aiGeneratedLines}, Files: ${this.stats.files.size}`);
+    Logger.debug(`📊 [STATS_UPDATE] AI lines: ${this.stats.aiGeneratedLines}, Files: ${this.stats.files.size}`);
   }
 
 
@@ -305,7 +343,7 @@ export class AICodeAnalyzer {
    */
   private async updateStats(): Promise<void> {
     await this.statsAggregator.refreshTotals(this.stats);
-    console.log(`📊 [UPDATE_STATS] AI: ${this.stats.aiGeneratedLines}/${this.stats.totalLines} = ${this.stats.percentage.toFixed(3)}%`);
+    Logger.debug(`📊 [UPDATE_STATS] AI: ${this.stats.aiGeneratedLines}/${this.stats.totalLines} = ${this.stats.percentage.toFixed(3)}%`);
   }
 
 
@@ -315,7 +353,7 @@ export class AICodeAnalyzer {
    */
   getStats(): AICodeStats {
     this.statsAggregator.updateSourceBreakdown(this.stats);
-    console.log(`📊 [GET_STATS] AI: ${this.stats.aiGeneratedLines}/${this.stats.totalLines} = ${this.stats.percentage.toFixed(3)}%`);
+    Logger.debug(`📊 [GET_STATS] AI: ${this.stats.aiGeneratedLines}/${this.stats.totalLines} = ${this.stats.percentage.toFixed(3)}%`);
     return { ...this.stats };
   }
 
@@ -358,8 +396,8 @@ export class AICodeAnalyzer {
 
       this.markAsMatched(calculatedHash, matchResult);
 
-      console.log(`🎯 [DOC_MATCH] Matched AI item ${calculatedHash.substring(0, 8)}... with document change!`);
-      console.log(`   File: ${fileName}, Operation: ${operation}, Content: "${content.substring(0, 50)}..."`);
+      Logger.info(`🎯 [DOC_MATCH] Matched AI item ${calculatedHash.substring(0, 8)}... with document change!`);
+      Logger.debug(`   File: ${fileName}, Operation: ${operation}, Content: "${content.substring(0, 50)}..."`);
 
       // 更新统计
       await this.updateStats();
@@ -456,7 +494,7 @@ export class AICodeAnalyzer {
       // 直接调用storage的storeAICodeLine方法
       this.aiCodeStorage.storeAICodeLine(absolutePath, relativePath, aiCodeLine);
 
-      console.log(`📝 AI stats updated: ${relativePath} ${result.operation} "${result.content.substring(0, 50)}${result.content.length > 50 ? '...' : ''}"`);
+      Logger.debug(`📝 AI stats updated: ${relativePath} ${result.operation} "${result.content.substring(0, 50)}${result.content.length > 50 ? '...' : ''}"`);
     } catch (error) {
       console.error('Error updating AI stats on hash match:', error);
     }

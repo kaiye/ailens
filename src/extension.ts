@@ -265,7 +265,6 @@ AI Lens Statistics:
 
     return {
       autoStart: config.get('autoStart', true),
-      updateInterval: config.get('updateInterval', 1000),
       showNotifications: config.get('showNotifications', true),
     };
   }

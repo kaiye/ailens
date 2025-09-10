@@ -76,7 +76,6 @@ export interface TimeWindow {
 
 export interface AILensConfig {
   autoStart: boolean;
-  updateInterval: number;
   showNotifications: boolean;
 }
 

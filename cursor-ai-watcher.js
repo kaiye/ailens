@@ -26,7 +26,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const sqlite3 = require('sqlite3').verbose();
+// Removed sqlite3 dependency - using sql.js instead
 // 移除 chokidar 依赖，使用 Node.js 原生 API
 
 /**
@@ -636,44 +636,44 @@ class CursorAIWatcher {
     }
 
     /**
-     * 从数据库加载AI追踪项
+     * 从数据库加载AI追踪项（使用 sql.js WASM，跨架构）
      */
     async loadAITrackingItems() {
-        return new Promise((resolve, reject) => {
-            const db = new sqlite3.Database(this.dbPath, sqlite3.OPEN_READONLY, (err) => {
-                if (err) {
-                    reject(err);
-                    return;
-                }
-            });
+        if (!fs.existsSync(this.dbPath)) {
+            throw new Error(`Cursor database not found: ${this.dbPath}`);
+        }
 
-            const query = `
-                SELECT key, value 
-                FROM ItemTable 
-                WHERE key = 'aiCodeTrackingLines'
-            `;
+        try {
+            // 动态导入 sql.js
+            const initSqlJs = (await import('sql.js')).default;
 
-            db.get(query, [], (err, row) => {
-                if (err) {
-                    reject(err);
-                    return;
-                }
+            // wasm 路径：从 node_modules 中查找
+            const SQL = await initSqlJs();
+            
+            const fileBuffer = fs.readFileSync(this.dbPath);
+            const db = new SQL.Database(fileBuffer);
+            try {
+                const query = "SELECT value FROM ItemTable WHERE key='aiCodeTrackingLines'";
+                const res = db.exec(query);
 
-                let data = null;
-                if (row) {
-                    try {
-                        data = JSON.parse(row.value);
-                    } catch (parseErr) {
-                        console.error('   ❌ Error parsing aiCodeTrackingLines:', parseErr.message);
-                        reject(parseErr);
-                        return;
-                    }
+                if (!res || res.length === 0 || !res[0].values || res[0].values.length === 0) {
+                    return null;
                 }
 
-                db.close();
-                resolve(data);
-            });
-        });
+                const value = res[0].values[0][0];
+                try {
+                    const data = JSON.parse(value);
+                    return data;
+                } catch (parseErr) {
+                    console.error('   ❌ Error parsing aiCodeTrackingLines:', parseErr.message);
+                    throw parseErr;
+                }
+            } finally {
+                try { db.close(); } catch {}
+            }
+        } catch (err) {
+            throw new Error(`Failed to read Cursor DB with sql.js: ${err?.message || err}`);
+        }
     }
 
     /**

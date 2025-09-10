@@ -20,6 +20,7 @@ export class CursorDatabase {
 
   // 智能 Debounce 事件系统
   private dbWatchers = new Map<string, { watcher: fs.FSWatcher; path: string }>();
+  private restartTimers = new Map<string, NodeJS.Timeout>(); // 跟踪重启定时器防止泄漏
   private eventDebouncer = new SmartEventDebouncer(300, 2000);
   private currentCallback: (() => void) | null = null;
 
@@ -98,19 +99,24 @@ export class CursorDatabase {
 
       const fileBuffer = fs.readFileSync(this.dbPath);
       const db = new SQL.Database(fileBuffer);
-      const query = "SELECT value FROM ItemTable WHERE key='aiCodeTrackingLines'";
-      const res = db.exec(query);
-
-      if (!res || res.length === 0 || !res[0].values || res[0].values.length === 0) {
-        return null;
-      }
-
-      const value = res[0].values[0][0] as string;
       try {
-        const data = JSON.parse(value) as AICodeItem[];
-        return data;
-      } catch (e) {
-        throw new Error(`Failed to parse aiCodeTrackingLines: ${e}`);
+        const query = "SELECT value FROM ItemTable WHERE key='aiCodeTrackingLines'";
+        const res = db.exec(query);
+
+        if (!res || res.length === 0 || !res[0].values || res[0].values.length === 0) {
+          return null;
+        }
+
+        const value = res[0].values[0][0] as string;
+        try {
+          const data = JSON.parse(value) as AICodeItem[];
+          return data;
+        } catch (e) {
+          throw new Error(`Failed to parse aiCodeTrackingLines: ${e}`);
+        }
+      } finally {
+        // ensure wasm resources are freed
+        try { db.close(); } catch {}
       }
     } catch (err: any) {
       throw new Error(`Failed to read Cursor DB with sql.js: ${err?.message || err}`);
@@ -287,6 +293,7 @@ export class CursorDatabase {
   private restartWatcher(name: string, targetPath: string): void {
     console.log(`🔄 [${name.toUpperCase()}] Attempting to restart watcher...`);
 
+    // 清理旧的监听器
     const oldWatcher = this.dbWatchers.get(name);
     if (oldWatcher && oldWatcher.watcher) {
       try {
@@ -295,10 +302,18 @@ export class CursorDatabase {
         console.error(`⚠️  Error closing old watcher:`, error);
       }
     }
-
     this.dbWatchers.delete(name);
 
-    setTimeout(() => {
+    // 清理旧的重启定时器
+    const existingTimer = this.restartTimers.get(name);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      this.restartTimers.delete(name);
+    }
+
+    // 设置新的重启定时器
+    const timer = setTimeout(() => {
+      this.restartTimers.delete(name); // 清理定时器引用
       try {
         this.createDatabaseWatcher(name, targetPath);
         console.log(`✅ [${name.toUpperCase()}] Watcher restarted successfully`);
@@ -306,6 +321,8 @@ export class CursorDatabase {
         console.error(`❌ [${name.toUpperCase()}] Restart failed:`, error);
       }
     }, 2000);
+    
+    this.restartTimers.set(name, timer);
   }
 
   /**
@@ -400,7 +417,19 @@ export class CursorDatabase {
       }
     }
     this.dbWatchers.clear();
-    console.log(`   ✅ ${stoppedCount} database watchers stopped`);
+
+    // 清理所有重启定时器防止资源泄漏
+    let clearedTimers = 0;
+    for (const [name, timer] of this.restartTimers.entries()) {
+      try {
+        clearTimeout(timer);
+        clearedTimers++;
+      } catch (error) {
+        console.error(`⚠️  Error clearing restart timer for ${name}:`, error);
+      }
+    }
+    this.restartTimers.clear();
+    console.log(`   ✅ ${stoppedCount} database watchers stopped, ${clearedTimers} timers cleared`);
 
     // 清理事件去重器
     this.eventDebouncer.clear();

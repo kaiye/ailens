@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 import { DocumentChange } from '../core/types';
-import { HashUtils } from '../hashing/hash';
-import { LineBasedHashInference, LineContent } from '../hashing/line-inference';
+import { LineBasedHashInference } from '../hashing/line-inference';
 import { DocumentVersionHistory } from './document-version-history';
+import { Logger } from '../utils/logger';
 import { buildDeleteRecords, buildInsertRecords, buildReplaceRecords } from './line-capture';
 
 /**
@@ -27,11 +27,15 @@ export class DocumentMonitor {
     timestamp: number;
     lineContents: string[]; // 只存行内容数组，不存完整文档
   }>();
+  private readonly MAX_SNAPSHOTS = 500; // ~25MB for 500 files, reasonable for large projects
+  private readonly SNAPSHOT_CLEANUP_INTERVAL = 3600000; // 1 hour - less aggressive cleanup
+  // Cleanup strategy: Always keep at least one snapshot per file
+  private lastSnapshotCleanup = Date.now();
 
   constructor (
     private onCodeChange: (change: DocumentChange) => void,
-    private onPotentialAICode?: (fileName: string, content: string, operation: '+' | '-') => void,
-    private onAIItemContentInferred?: (fileName: string, content: string, operation: '+' | '-') => Promise<void>,
+    private _onPotentialAICode?: (fileName: string, content: string, operation: '+' | '-') => void,
+    private _onAIItemContentInferred?: (fileName: string, content: string, operation: '+' | '-') => Promise<void>,
     private onHashMatchFound?: (aiItem: any, result: any, fileName: string) => void
   ) {
     // 初始化新的推断引擎，传递hash match回调
@@ -77,13 +81,15 @@ export class DocumentMonitor {
     const cleanupInterval = setInterval(() => {
       this.cleanupOldChanges();
       this.versionHistory.performMaintenance();
+      // 定期清理推断引擎中已使用且过期的记录，避免内存累积
+      this.hashInference.cleanup();
     }, 10000); // 每10秒清理一次
 
     this.disposables.push(new vscode.Disposable(() => {
       clearInterval(cleanupInterval);
     }));
 
-    console.log('Document monitor started');
+    Logger.info('Document monitor started');
   }
 
   /**
@@ -101,7 +107,7 @@ export class DocumentMonitor {
     this.hashInference.cleanup();
     this.versionHistory.clear();
 
-    console.log('Document monitor stopped');
+    Logger.info('Document monitor stopped');
   }
 
   /**
@@ -123,7 +129,7 @@ export class DocumentMonitor {
       // 计算影响的行数
       const affectedLines = this.calculateAffectedLines(change.range, change.text);
       // 生成唯一标识符
-      const changeId = `${fileName}_${timestamp}_${Math.random().toString(36).substr(2, 9)}`;
+      const changeId = `${fileName}_${timestamp}_${Math.random().toString(36).substring(2, 11)}`;
 
       const documentChange: DocumentChange = {
         document: fileName,
@@ -169,25 +175,25 @@ export class DocumentMonitor {
 
     // 只记录有意义的变化
     if (text.length > 0) {
-      console.log(`\n=== DOCUMENT CHANGE EVENT ===`);
-      console.log(`Raw VS Code TextDocumentContentChangeEvent:`, JSON.stringify(originalChange, null, 2));
-      console.log(`Processed DocumentChange object:`, JSON.stringify(documentChange, null, 2));
+      Logger.debug(`\n=== DOCUMENT CHANGE EVENT ===`);
+      Logger.debug(`Raw VS Code TextDocumentContentChangeEvent:`, JSON.stringify(originalChange, null, 2));
+      Logger.debug(`Processed DocumentChange object:`, JSON.stringify(documentChange, null, 2));
 
       // 输出所有变化的代码行，不做任何trim操作
       const lines = text.split('\n');
-      console.log(`Raw content lines (${lines.length} total):`);
+      Logger.debug(`Raw content lines (${lines.length} total):`);
       lines.forEach((line, index) => {
-        console.log(`  Raw Line ${index + 1}: ${JSON.stringify(line)}`);
+        Logger.debug(`  Raw Line ${index + 1}: ${JSON.stringify(line)}`);
       });
 
       if (documentChange.beforeText && documentChange.beforeText.length > 0) {
         const beforeLines = documentChange.beforeText.split('\n');
-        console.log(`Raw before content lines (${beforeLines.length} total):`);
+        Logger.debug(`Raw before content lines (${beforeLines.length} total):`);
         beforeLines.forEach((line, index) => {
-          console.log(`  Raw Before Line ${index + 1}: ${JSON.stringify(line)}`);
+          Logger.debug(`  Raw Before Line ${index + 1}: ${JSON.stringify(line)}`);
         });
       }
-      console.log(`=== END DOCUMENT CHANGE ===\n`);
+      Logger.debug(`=== END DOCUMENT CHANGE ===\n`);
     }
   }
 
@@ -200,9 +206,9 @@ export class DocumentMonitor {
     fileName: string,
     timestamp: number
   ): void {
-    console.log(`\n🔍 FULL LINE CAPTURE:`);
-    console.log(`  Change range: [${change.range.start.line}:${change.range.start.character}, ${change.range.end.line}:${change.range.end.character}]`);
-    console.log(`  Range length: ${change.rangeLength}, New text length: ${change.text.length}`);
+    Logger.debug(`\n🔍 FULL LINE CAPTURE:`);
+    Logger.debug(`  Change range: [${change.range.start.line}:${change.range.start.character}, ${change.range.end.line}:${change.range.end.character}]`);
+    Logger.debug(`  Range length: ${change.rangeLength}, New text length: ${change.text.length}`);
 
     const startLine = change.range.start.line;
     const endLine = change.range.end.line;
@@ -213,7 +219,7 @@ export class DocumentMonitor {
     const isInsert = change.rangeLength === 0 && change.text.length > 0;
     const isReplace = change.rangeLength > 0 && change.text.length > 0;
 
-    console.log(`  Operation type: ${isDelete ? 'DELETE' : isInsert ? 'INSERT' : isReplace ? 'REPLACE' : 'UNKNOWN'}`);
+    Logger.debug(`  Operation type: ${isDelete ? 'DELETE' : isInsert ? 'INSERT' : isReplace ? 'REPLACE' : 'UNKNOWN'}`);
 
     if (isDelete) {
       const recs = buildDeleteRecords(snapshot, startLine, endLine, timestamp, fileName);
@@ -226,7 +232,7 @@ export class DocumentMonitor {
       recs.forEach(r => this.hashInference.recordLineContent(r));
     }
 
-    console.log(`🔍 END FULL LINE CAPTURE\n`);
+    Logger.debug(`🔍 END FULL LINE CAPTURE\n`);
   }
 
   /**
@@ -453,7 +459,7 @@ export class DocumentMonitor {
     const fileName = this.getRelativeFileName(document.uri.fsPath);
     const lines = document.getText().split('\n');
 
-    console.log(`📸 Capturing snapshot: ${fileName} (${trigger}, ${lines.length} lines)`);
+    Logger.debug(`📸 Capturing snapshot: ${fileName} (${trigger}, ${lines.length} lines)`);
 
     this.documentSnapshots.set(fileName, {
       version: document.version,
@@ -461,8 +467,8 @@ export class DocumentMonitor {
       lineContents: lines
     });
 
-    // 只保留最近的快照，清理旧的
-    this.cleanupOldSnapshots(fileName);
+    // 清理逻辑：控制总快照数量防止内存泄漏
+    this.cleanupSnapshotsIfNeeded();
   }
 
   /**
@@ -484,9 +490,9 @@ export class DocumentMonitor {
     const document = event.document;
     const fileName = this.getRelativeFileName(document.uri.fsPath);
 
-    console.log(`\n🔄 Document change detected: ${fileName}`);
-    console.log(`   Document version: ${document.version}`);
-    console.log(`   Changes count: ${event.contentChanges.length}`);
+    Logger.debug(`\n🔄 Document change detected: ${fileName}`);
+    Logger.debug(`   Document version: ${document.version}`);
+    Logger.debug(`   Changes count: ${event.contentChanges.length}`);
 
     // 尝试获取变更前的内容
     const snapshot = this.documentSnapshots.get(fileName);
@@ -494,15 +500,15 @@ export class DocumentMonitor {
     // 处理每个变更
     for (let i = 0; i < event.contentChanges.length; i++) {
       const change = event.contentChanges[i];
-      console.log(`\n📝 Processing change ${i + 1}:`);
+      Logger.debug(`\n📝 Processing change ${i + 1}:`);
 
       // 尝试从快照获取原始内容
       const originalContent = this.getOriginalContentFromSnapshot(snapshot, change);
 
-      console.log(`   Range: [${change.range.start.line}:${change.range.start.character}, ${change.range.end.line}:${change.range.end.character}]`);
-      console.log(`   Range length: ${change.rangeLength}`);
-      console.log(`   New text: "${change.text}"`);
-      console.log(`   Original content: "${originalContent}"`);
+      Logger.debug(`   Range: [${change.range.start.line}:${change.range.start.character}, ${change.range.end.line}:${change.range.end.character}]`);
+      Logger.debug(`   Range length: ${change.rangeLength}`);
+      Logger.debug(`   New text: "${change.text}"`);
+      Logger.debug(`   Original content: "${originalContent}"`);
 
       // 继续处理原有逻辑
       this.handleSingleTextChange(document, change, originalContent);
@@ -572,7 +578,7 @@ export class DocumentMonitor {
   private handleSingleTextChange(
     document: vscode.TextDocument,
     change: vscode.TextDocumentContentChangeEvent,
-    originalContent: string
+    _originalContent: string
   ): void {
     // 调用captureFullLineContents方法处理+/-记录创建
     const fileName = this.getRelativeFileName(document.uri.fsPath);
@@ -581,11 +587,59 @@ export class DocumentMonitor {
 
 
   /**
-   * 清理旧快照（只保留最近的）
+   * 清理快照以防止内存泄漏
    */
-  private cleanupOldSnapshots(fileName: string): void {
-    // 简单策略：每个文件只保留一个最新快照
-    // 如果需要更复杂的策略，可以保留最近2个版本
-    // 但按您的要求，我们minimalist approach
+  private cleanupSnapshotsIfNeeded(): void {
+    const now = Date.now();
+    
+    // 定期清理或达到数量限制时清理
+    if (now - this.lastSnapshotCleanup > this.SNAPSHOT_CLEANUP_INTERVAL || 
+        this.documentSnapshots.size > this.MAX_SNAPSHOTS) {
+      
+      // 收集所有快照，按文件分组
+      const fileGroups = new Map<string, typeof snapshots[0][]>();
+      const snapshots = Array.from(this.documentSnapshots.entries())
+        .map(([fileName, snapshot]) => ({ fileName, ...snapshot }));
+      
+      // 按文件分组
+      snapshots.forEach(snapshot => {
+        const group = fileGroups.get(snapshot.fileName) || [];
+        group.push(snapshot);
+        fileGroups.set(snapshot.fileName, group);
+      });
+      
+      // 为每个文件至少保留一个最新的快照，然后按时间排序保留其余的
+      const toKeep: typeof snapshots = [];
+      
+      // 每个文件保留最新的一个
+      fileGroups.forEach(group => {
+        group.sort((a, b) => b.timestamp - a.timestamp);
+        toKeep.push(group[0]); // 最新的一个
+      });
+      
+      // 如果还有空间，按时间顺序添加其余快照
+      const remainingSlots = this.MAX_SNAPSHOTS - toKeep.length;
+      if (remainingSlots > 0) {
+        const additionalSnapshots = snapshots
+          .filter(s => !toKeep.some(k => k.fileName === s.fileName && k.timestamp === s.timestamp))
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, remainingSlots);
+        toKeep.push(...additionalSnapshots);
+      }
+      
+      // 清空并重新填充
+      this.documentSnapshots.clear();
+      toKeep.forEach(snapshot => {
+        this.documentSnapshots.set(snapshot.fileName, {
+          version: snapshot.version,
+          timestamp: snapshot.timestamp,
+          lineContents: snapshot.lineContents
+        });
+      });
+      
+      const uniqueFiles = new Set(toKeep.map(s => s.fileName)).size;
+      console.log(`🧹 [CLEANUP] Cleaned document snapshots: ${snapshots.length} → ${this.documentSnapshots.size} (${uniqueFiles} files preserved)`);
+      this.lastSnapshotCleanup = now;
+    }
   }
 }

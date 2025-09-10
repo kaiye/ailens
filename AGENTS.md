@@ -35,5 +35,5 @@
 
 ## Security & Configuration Tips
 - Never commit personal data from `~/.ailens/` or Cursor databases; tests must use mocks.
-- User settings keys exposed by the extension: `ailens.autoStart`, `ailens.updateInterval`, `ailens.showNotifications`.
+- User settings keys exposed by the extension: `ailens.autoStart`, `ailens.showNotifications`, `ailens.debug`.
 - Keep file I/O and DB access defensive (read-only where possible) and behind typed interfaces in `src/`.

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { Logger } from '../utils/logger';
 import { AICodeItem } from '../core/types';
 import { HashUtils } from './hash';
 
@@ -63,7 +64,7 @@ export class LineBasedHashInference {
    * 推断AI代码项的内容 - 正序遍历保持时间顺序
    */
   inferHashContents(aiItems: AICodeItem[], inferenceTime: number): HashInferenceResult[] {
-    console.log(`\n🧠 Hash Inference Engine - Processing ${aiItems.length} AI items (chronological order)`);
+    Logger.debug(`\n🧠 Hash Inference Engine - Processing ${aiItems.length} AI items (chronological order)`);
 
     const results: HashInferenceResult[] = [];
 
@@ -75,7 +76,7 @@ export class LineBasedHashInference {
       }
     }
 
-    console.log(`📊 Hash Inference Results: ${results.length}/${aiItems.length} items resolved`);
+    Logger.debug(`📊 Hash Inference Results: ${results.length}/${aiItems.length} items resolved`);
 
     return results;
   }
@@ -91,27 +92,27 @@ export class LineBasedHashInference {
 
     // 1. 先检查hash缓存
     if (this.hashToContentCache.has(aiItem.hash)) {
-      console.log(`\n   💾 Cache hit for hash: ${aiItem.hash}`);
+      Logger.debug(`\n   💾 Cache hit for hash: ${aiItem.hash}`);
       return this.hashToContentCache.get(aiItem.hash)!;
     }
 
-    console.log(`\n   🔍 Inferring hash: ${aiItem.hash} for file: ${aiFileName}`);
+    Logger.debug(`\n   🔍 Inferring hash: ${aiItem.hash} for file: ${aiFileName}`);
 
     let attemptCount = 0;
 
     // 正序遍历文件列表（保持时间顺序）
     const fileEntries = Array.from(this.recentLines.entries());
 
-    console.log(`   🗂️  Available files in cache: ${fileEntries.map(([name, lines]) => `${name}(${lines.length})`).join(', ')}`);
+    Logger.debug(`   🗂️  Available files in cache: ${fileEntries.map(([name, lines]) => `${name}(${lines.length})`).join(', ')}`);
 
     for (const [recordFileName, lineContents] of fileEntries) {
       // 文件名相关性检查
       if (!this.isFileNameRelated(aiFileName, recordFileName)) {
-        console.log(`   🚫 Skipped unrelated file: ${recordFileName}`);
+        Logger.debug(`   🚫 Skipped unrelated file: ${recordFileName}`);
         continue;
       }
 
-      console.log(`   📂 Checking records from file: ${recordFileName} (${lineContents.length} records)`);
+      Logger.debug(`   📂 Checking records from file: ${recordFileName} (${lineContents.length} records)`);
 
       let skippedUsed = 0;
       let validRecords = 0;
@@ -125,11 +126,11 @@ export class LineBasedHashInference {
         // 跳过已使用的记录
         if (record.used) {
           skippedUsed++;
-          console.log(`   🔄 Record ${i}: USED - Time: ${recordTime}, Age: ${recordAge}ms, Content: "${record.content.substring(0, 30)}..."`);
+          Logger.debug(`   🔄 Record ${i}: USED - Time: ${recordTime}, Age: ${recordAge}ms, Content: "${record.content.substring(0, 30)}..."`);
           continue;
         }
 
-        console.log(`   ✅ Record ${i}: AVAILABLE - Time: ${recordTime}, Age: ${recordAge}ms, Op: ${record.operation}, Content: "${record.content.substring(0, 50)}..."`);
+        Logger.debug(`   ✅ Record ${i}: AVAILABLE - Time: ${recordTime}, Age: ${recordAge}ms, Op: ${record.operation}, Content: "${record.content.substring(0, 50)}..."`);
 
         validRecords++;
         attemptCount++;
@@ -138,10 +139,10 @@ export class LineBasedHashInference {
         let hashInput = `${aiFileName}${record.operation}${record.content}`;
         let calculatedHash = HashUtils.calculateCodeHash(aiFileName, record.operation, record.content);
 
-        console.log(`   🧮 Hash #${attemptCount}a: input="${hashInput}" -> ${calculatedHash} (target: ${aiItem.hash})`);
+        Logger.debug(`   🧮 Hash #${attemptCount}a: input="${hashInput}" -> ${calculatedHash} (target: ${aiItem.hash})`);
 
         if (calculatedHash === aiItem.hash) {
-          console.log(`   🎯 MATCH FOUND with original filename!`);
+          Logger.debug(`   🎯 MATCH FOUND with original filename!`);
 
           // 标记该记录为已使用
           record.used = true;
@@ -172,10 +173,10 @@ export class LineBasedHashInference {
             hashInput = `${relativePath}${record.operation}${record.content}`;
             calculatedHash = HashUtils.calculateCodeHash(relativePath, record.operation, record.content);
 
-            console.log(`   🧮 Hash #${attemptCount}b: input="${hashInput}" -> ${calculatedHash} (target: ${aiItem.hash})`);
+            Logger.debug(`   🧮 Hash #${attemptCount}b: input="${hashInput}" -> ${calculatedHash} (target: ${aiItem.hash})`);
 
             if (calculatedHash === aiItem.hash) {
-              console.log(`   🎯 MATCH FOUND with relative path!`);
+              Logger.debug(`   🎯 MATCH FOUND with relative path!`);
 
               // 标记该记录为已使用
               record.used = true;
@@ -203,13 +204,13 @@ export class LineBasedHashInference {
       }
 
       // 输出记录跳过统计
-      console.log(`   📋 Records summary: Valid=${validRecords}, SkippedUsed=${skippedUsed}`);
+      Logger.debug(`   📋 Records summary: Valid=${validRecords}, SkippedUsed=${skippedUsed}`);
       if (validRecords === 0) {
-        console.log(`   ⚠️  No valid records found in file: ${recordFileName}`);
+        Logger.debug(`   ⚠️  No valid records found in file: ${recordFileName}`);
       }
     }
 
-    console.log(`   ❌ No match found for hash: ${aiItem.hash} after ${attemptCount} attempts`);
+    Logger.debug(`   ❌ No match found for hash: ${aiItem.hash} after ${attemptCount} attempts`);
     return null;
   }
 
@@ -329,7 +330,7 @@ export class LineBasedHashInference {
         this.hashToContentCache.set(hash, result);
       }
 
-      console.log(`🧹 Hash cache cleanup: kept ${this.hashToContentCache.size} entries`);
+      Logger.debug(`🧹 Hash cache cleanup: kept ${this.hashToContentCache.size} entries`);
     }
   }
 

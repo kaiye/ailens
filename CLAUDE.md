@@ -96,8 +96,8 @@ AI Lens follows a layered architecture with clear separation of concerns:
 
 ## Configuration
 - `ailens.autoStart` (default: true) - Auto-start monitoring on VS Code open
-- `ailens.updateInterval` (default: 1000ms) - Monitoring update interval
 - `ailens.showNotifications` (default: true) - Show AI detection notifications
+- `ailens.debug` (default: false) - Enable verbose logging for debugging
 
 ## TypeScript Configuration
 - Target: ES2020, CommonJS modules
